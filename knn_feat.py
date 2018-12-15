@@ -21,7 +21,7 @@ def knnExtract(X, y, k = 1, holds = 5):
     for train_index, test_index in kf.split(X):
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = y[train_index], y[test_index]
-        
+
         features = np.empty([0, len(X_test)])
         
         for class_index in range(CLASS_NUM):
