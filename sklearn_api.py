@@ -10,7 +10,7 @@ from sklearn.base import BaseEstimator
 from sklearn.base import TransformerMixin
 
 from sklearn.utils import check_X_y
-from sklearn.utils import chech_array
+from sklearn.utils import check_array
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.validation import check_random_state
 
@@ -89,6 +89,7 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         check_is_fitted(self, '_X_each_class')
+        X = np.array(check_array(X, force_all_finite=True))
         X_knn = np.array(
             Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
                 [delayed(self._extract_feature_values)(x) for x in X])
