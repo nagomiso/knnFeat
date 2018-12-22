@@ -1,8 +1,8 @@
 # coding: utf-8
 from functools import partial
+from itertools import product
 
-from joblib import delayed
-from joblib import Parallel
+from faiss import IndexFlatL2
 
 import numpy as np
 
@@ -14,8 +14,6 @@ from sklearn.utils import check_X_y
 from sklearn.utils import check_array
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.validation import check_random_state
-
-from faiss import IndexFlatL2
 
 
 class KNeighborsFeatures(BaseEstimator, TransformerMixin):
@@ -53,29 +51,31 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
         self.verbose = verbose
         self.kwargs = kwargs
 
-    def _extract_feature_values(self, x):
-        calc_dist = partial(
-            KNeighborsFeatures.__distance, x)
-        x_knn = []
-        feature_append = x_knn.append
-        for X_train in self._X_each_class.values():
-            distances = np.sort(
-                np.array([calc_dist(x_train) for x_train in X_train]))
-            for k in range(self.n_neighbors):
-                feature_append(np.sum(distances[:k + 1]))
-        return np.array(x_knn)
+    def _search(self, X):
+        def __search_func(indexer):
+            if 'sklern' == self.method:
+                dists, _ = indexer.kneighbors(X, self.n_neighbors)
+            if 'faiss' == self.method:
+                dists, _ = indexer.search(X, k=self.n_neighbors)
+            return dists
 
-    def _search(self, class_label, X):
-        indexer = self._X_each_class[class_label]
-        if 'sklern' == self.method:
-            dists, _ = indexer.kneighbors(X, self.n_neighbors)
-        if 'faiss' == self.method:
-            dists, _ = indexer.search(X, k=self.n_neighbors)
-        return dists
+        return {
+            class_label: __search_func(idxer)
+            for class_label, idxer in self._X_each_class.items()
+        }
 
-    def _extract_feature_values___(self, X):
+    def _extract_feature(self, X):
         dim = self.n_neighbors * len(self._X_each_class)
+        neighbors_dists = self._search(X)
         X_knn = np.empty((X.shape[0], dim))
+        for idx, (k, class_label) in enumerate(
+            product(range(self.n_neighbor), self._X_each_class.kes())
+        ):
+            X_knn[:, idx:idx + 1] = np.sum(
+                neighbors_dists[class_label][:, 0:k + 1],
+                axis=1,
+                keepdims=True
+            )
         return X_knn
 
     def __get_indexer_initializer(self):
@@ -135,9 +135,5 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
     def transform(self, X):
         check_is_fitted(self, '_X_each_class')
         X = np.array(check_array(X, force_all_finite=True))
-
-        X_knn = np.array(
-            Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
-                [delayed(self._extract_feature_values)(x) for x in X])
-            )
+        X_knn = self._extract_feature(X)
         return X_knn
