@@ -36,12 +36,14 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
     ):
         self.n_neighbors = n_neighbors
         if not isinstance(sampling_ratio, dict) \
-            or not isinstance(sampling_ratio, float):
+           and not isinstance(sampling_ratio, float):
             raise ValueError(
-                message='sampling_ratio must be dict or float.')
+                'sampling_ratio must be dict or float. {}'.format(
+                    sampling_ratio
+                )
+            )
         if method not in KNeighborsFeatures.allowed_methods:
-            raise ValueError(
-                message='"{}" is not supported.'.format(method))
+            raise ValueError('"{}" is not supported.'.format(method))
         self.method = method
         self.sampling_ratio = sampling_ratio
         self.mean = mean
@@ -53,9 +55,9 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
 
     def _search(self, X):
         def __search_func(indexer):
-            if 'sklern' == self.method:
+            if 'sklearn' == self.method:
                 dists, _ = indexer.kneighbors(X, self.n_neighbors)
-            if 'faiss' == self.method:
+            elif 'faiss' == self.method:
                 dists, _ = indexer.search(X, k=self.n_neighbors)
             return dists
 
@@ -69,7 +71,7 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
         neighbors_dists = self._search(X)
         X_knn = np.empty((X.shape[0], dim))
         for idx, (k, class_label) in enumerate(
-            product(range(self.n_neighbor), self._X_each_class.kes())
+            product(range(self.n_neighbors), self._X_each_class.keys())
         ):
             X_knn[:, idx:idx + 1] = np.sum(
                 neighbors_dists[class_label][:, 0:k + 1],
@@ -81,10 +83,6 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
     def __get_indexer_initializer(self):
         search_klass = KNeighborsFeatures.allowed_methods[self.method]
         return partial(search_klass, **self.kwargs)
-
-    @staticmethod
-    def __distance(v, u):
-        return np.linalg.norm(v - u)
 
     def __choice(self, X, sampling_ratio):
         if sampling_ratio == 1:
@@ -107,12 +105,12 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
     def __add_gaussian_noize(self, X):
         noize = self.random_state.normal(
             self.mean, self.sigma, np.prod(X.shape))
-        return X + noize.reshape(X.shape)
+        return np.array(X + noize.reshape(X.shape), dtype=np.float32)
 
     def _train(self, func, X):
-        if 'sklern' == self.method:
+        if 'sklearn' == self.method:
             return func(n_jobs=self.n_jobs).fit(X)
-        if 'faiss' == self.method:
+        elif 'faiss' == self.method:
             indexer = func(X.shape[1])
             indexer.add(X)
             return indexer
@@ -124,7 +122,7 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
         self.__set_sampling_ratio_each_class(class_set)
         self._X_each_class = {}
         for class_label in class_set:
-            noize_added_X =  self.__add_gaussian_noize(X[y == class_label])
+            noize_added_X = self.__add_gaussian_noize(X[y == class_label])
             sampled_X = self.__choice(
                 noize_added_X,
                 self._sampling_ratio_each_class[class_label]
@@ -134,6 +132,6 @@ class KNeighborsFeatures(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         check_is_fitted(self, '_X_each_class')
-        X = np.array(check_array(X, force_all_finite=True))
+        X = np.array(check_array(X, force_all_finite=True), dtype=np.float32)
         X_knn = self._extract_feature(X)
         return X_knn
